@@ -46,6 +46,12 @@ void PatchVolume(HANDLE hProc) {
     WriteProcessMemory(hProc, (LPVOID)(ptr2 + 88), &zero, 4, nullptr);
 }
 
+void PatchSatelliteString(HANDLE hProc) {
+    const DWORD sat_addr = 0x00930C84;
+    BYTE zero = 0x00;
+    WriteProcessMemory(hProc, (LPVOID)sat_addr, &zero, 1, nullptr);
+}
+
 int main() {
     std::wcout << L"BF2 memory patcher running...\n";
 
@@ -56,6 +62,7 @@ int main() {
             if (hProc) {
                 PatchUnlocks(hProc);
                 PatchVolume(hProc);
+                PatchSatelliteString(hProc);
                 //std::wcout << L"Patches applied.\n";
             }
         }
