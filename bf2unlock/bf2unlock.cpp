@@ -4,73 +4,79 @@
 #include <thread>
 
 DWORD GetProcessId(const wchar_t* processName) {
-    PROCESSENTRY32 entry = { sizeof(PROCESSENTRY32) };
+    PROCESSENTRY32W procEntry = { sizeof(procEntry) };
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 
     if (snapshot == INVALID_HANDLE_VALUE)
         return 0;
 
-    DWORD pid = 0;
-    if (Process32First(snapshot, &entry)) {
+    DWORD processId = 0;
+    if (Process32FirstW(snapshot, &procEntry)) {
         do {
-            if (_wcsicmp(entry.szExeFile, processName) == 0) {
-                pid = entry.th32ProcessID;
+            if (_wcsicmp(procEntry.szExeFile, processName) == 0) {
+                processId = procEntry.th32ProcessID;
                 break;
             }
-        } while (Process32Next(snapshot, &entry));
+        } while (Process32NextW(snapshot, &procEntry));
     }
 
     CloseHandle(snapshot);
-    return pid;
+    return processId;
 }
 
-
 void PatchUnlocks(HANDLE hProc) {
-    BYTE nop[2] = { 0x90, 0x90 };
+    const BYTE nop[2] = { 0x90, 0x90 };
 
-    WriteProcessMemory(hProc, (LPVOID)(0x468CBE), nop, 2, nullptr);
-    WriteProcessMemory(hProc, (LPVOID)(0x5028C5), nop, 2, nullptr);
+    const uintptr_t addr1 = 0x468CBE;
+    const uintptr_t addr2 = 0x5028C5;
+
+    WriteProcessMemory(hProc, (LPVOID)addr1, nop, sizeof(nop), nullptr);
+    WriteProcessMemory(hProc, (LPVOID)addr2, nop, sizeof(nop), nullptr);
 }
 
 void PatchVolume(HANDLE hProc) {
-    DWORD ptr1 = 0;
-    if (!ReadProcessMemory(hProc, (LPCVOID)0x99EF80, &ptr1, 4, nullptr) || ptr1 == 0)
+    uintptr_t base = 0;
+    if (!ReadProcessMemory(hProc, (LPCVOID)0x99EF80, &base, sizeof(base), nullptr) || base == 0)
         return;
 
-    DWORD ptr2 = 0;
-    if (!ReadProcessMemory(hProc, (LPCVOID)(ptr1 + 440), &ptr2, 4, nullptr) || ptr2 == 0)
+    uintptr_t ptr = 0;
+    if (!ReadProcessMemory(hProc, (LPCVOID)(base + 440), &ptr, sizeof(ptr), nullptr) || ptr == 0)
         return;
 
-    float zero = 0.0f;
-    WriteProcessMemory(hProc, (LPVOID)(ptr2 + 84), &zero, 4, nullptr);
-    WriteProcessMemory(hProc, (LPVOID)(ptr2 + 88), &zero, 4, nullptr);
+    const float zero = 0.0f;
+    const uintptr_t addr1 = ptr + 84;
+    const uintptr_t addr2 = ptr + 88;
+
+    WriteProcessMemory(hProc, (LPVOID)addr1, &zero, sizeof(zero), nullptr);
+    WriteProcessMemory(hProc, (LPVOID)addr2, &zero, sizeof(zero), nullptr);
 }
 
 void PatchSatelliteString(HANDLE hProc) {
-    const DWORD sat_addr = 0x00930C84;
-    BYTE zero = 0x00;
-    WriteProcessMemory(hProc, (LPVOID)sat_addr, &zero, 1, nullptr);
+    const uintptr_t addr = 0x930C84;
+    const BYTE zero = 0x00;
+
+    WriteProcessMemory(hProc, (LPVOID)addr, &zero, sizeof(zero), nullptr);
 }
 
 int main() {
     std::wcout << L"BF2 memory patcher running...\n";
 
     while (true) {
-        DWORD pid = GetProcessId(L"BF2.exe");
-        if (pid) {
-            HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+        DWORD processId = GetProcessId(L"BF2.exe");
+        if (processId) {
+            HANDLE hProc = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, processId);
             if (hProc) {
                 PatchUnlocks(hProc);
                 PatchVolume(hProc);
                 PatchSatelliteString(hProc);
-                //std::wcout << L"Patches applied.\n";
+                CloseHandle(hProc);
             }
         }
         else {
             std::wcout << L"BF2.exe not running.\n";
         }
 
-        std::this_thread::sleep_for(std::chrono::seconds(4));
+        std::this_thread::sleep_for(std::chrono::seconds(5));
     }
 
     return 0;
