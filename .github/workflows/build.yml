@@ -1,0 +1,61 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+      - '.github/**'
+
+env:
+  SOLUTION_FILE_PATH: bf2unlock.sln
+  BUILD_CONFIGURATION: Release
+  BUILD_PLATFORM: x86
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.0.2
+
+    - name: Build with MSBuild
+      run: msbuild ${{ env.SOLUTION_FILE_PATH }} /m /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ env.BUILD_PLATFORM }}
+
+    - name: Create tag from commit SHA
+      id: tag
+      shell: pwsh
+      run: |
+        $sha = $env:GITHUB_SHA.Substring(0,7)
+        $tagName = "commit-$sha"
+        echo "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        git config user.name "github-actions"
+        git config user.email "github-actions@github.com"
+        git tag $tagName
+        git push origin $tagName
+
+    - name: Create GitHub Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ env.TAG_NAME }}
+        release_name: Release ${{ env.TAG_NAME }}
+        draft: false
+        prerelease: false
+
+    - name: Upload .exe to Release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: Release/bf2unlock.exe
+        asset_name: bf2unlock.exe
+        asset_content_type: application/octet-stream
